@@ -349,6 +349,20 @@ Panel {
     return w.toFixed(1) + " W"
   }
 
+  // Battery node sub-line: pack voltage and current (+ in, − out, same
+  // convention as signedWatt).
+  function batterySubText() {
+    if (!powerChain) return ""
+    var parts = []
+    if (powerChain.packV !== null) parts.push(powerChain.packV.toFixed(2) + " V")
+    if (powerChain.packA !== null) {
+      var a = powerChain.packA
+      var sign = a > 0.005 ? "+" : (a < -0.005 ? "−" : "")
+      parts.push(sign + Math.abs(a).toFixed(2) + " A")
+    }
+    return parts.join(" · ")
+  }
+
   function sourceFlowDir() {
     if (!powerChain) return "none"
     return powerChain.source === "battery" ? "none" : "right"
@@ -1009,6 +1023,7 @@ Panel {
               iconText: "\uf241"
               title: "Battery"
               value: root.powerChain ? root.signedWatt(root.powerChain.batteryW) : "—"
+              sub: root.batterySubText()
             }
           }
         }

@@ -73,6 +73,10 @@ check("chain componentsW", chain.componentsW, 11.9)
 const chainNulls = Model.parsePowerChain('{"source":"battery","batteryW":-10.2,"systemW":null,"componentsW":null}')
 check("chain nulls", chainNulls.systemW, null)
 check("chain battery source", chainNulls.source, "battery")
+check("chain pack absent -> null", chainNulls.packV, null)
+const chainVA = Model.parsePowerChain('{"source":"mains","packV":8.78,"packA":1.84}')
+check("chain packV", chainVA.packV, 8.78)
+check("chain packA", chainVA.packA, 1.84)
 
 // ---- timeToThresholdText ----
 check("t2t 70% @67% 29Wh 15.9W -> 3m", Model.timeToThresholdText(70, 0.67, 29, 15.9), "3m")

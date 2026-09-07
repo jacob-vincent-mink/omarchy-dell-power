@@ -181,7 +181,9 @@ function parsePowerChain(raw) {
     screenW: num(obj.screenW),
     igpuW: num(obj.igpuW),
     nominalWh: num(obj.nominalWh),
-    portW: num(obj.portW)
+    portW: num(obj.portW),
+    packV: num(obj.packV),
+    packA: num(obj.packA)
   }
 }
 

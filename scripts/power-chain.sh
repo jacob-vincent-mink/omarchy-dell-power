@@ -80,6 +80,17 @@ if [[ -n $v1 && -n $i1 && -n $v2 && -n $i2 ]]; then
     'BEGIN { printf "%.1f", (v1 * i1 + v2 * i2) / 2e12 }')
 fi
 
+# Pack voltage (V) and current (A), same averaging window. The EC reports
+# unsigned current; the sign is applied from the battery state further down.
+packV=null
+if [[ -n $v1 && -n $v2 ]]; then
+  packV=$(awk -v v1="$v1" -v v2="$v2" 'BEGIN { printf "%.2f", (v1 + v2) / 2e6 }')
+fi
+packA=null
+if [[ -n $i1 && -n $i2 ]]; then
+  packA=$(awk -v i1="$i1" -v i2="$i2" 'BEGIN { printf "%.2f", (i1 + i2) / 2e6 }')
+fi
+
 # Design capacity when new (Wh): charge_full_design (µAh) × nominal voltage.
 nominalWh=null
 cfd=$(cat "$BAT/charge_full_design" 2>/dev/null) || cfd=""
@@ -133,6 +144,9 @@ discharging=false
 if $discharging && [[ $batteryW != null ]]; then
   batteryW=$(awk -v w="$batteryW" 'BEGIN { if (w > 0) w = -w; printf "%.1f", w }')
 fi
+if $discharging && [[ $packA != null ]]; then
+  packA=$(awk -v a="$packA" 'BEGIN { if (a > 0) a = -a; printf "%.2f", a }')
+fi
 
 componentsW=null
 adapterW=null
@@ -170,4 +184,5 @@ jq -n --arg s "$source" --arg t "$usbType" \
   --argjson a "$adapterW" \
   --argjson p "$cpuW" --argjson r "$ramW" --argjson e "$screenW" \
   --argjson g "$igpuW" --argjson n "$nominalWh" --argjson w "$portW" \
-  '{source:$s, usbType:$t, batteryW:$b, systemW:$y, adapterW:$a, componentsW:$c, cpuW:$p, ramW:$r, screenW:$e, igpuW:$g, nominalWh:$n, portW:$w}'
+  --argjson pv "$packV" --argjson pa "$packA" \
+  '{source:$s, usbType:$t, batteryW:$b, systemW:$y, adapterW:$a, componentsW:$c, cpuW:$p, ramW:$r, screenW:$e, igpuW:$g, nominalWh:$n, portW:$w, packV:$pv, packA:$pa}'
