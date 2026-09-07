@@ -6,7 +6,7 @@ widget, extended with charge-limit, charge-mode and power-option controls for
 Dell laptops exposed through `dell-smm-hwmon` / `dell-wmi-sysman`
 (Latitude 7390 tested).
 
-![Dell Power panel — battery hero with draggable charge thresholds, power flow chain, charge mode and USB options](screenshot.png)
+![Dell Power panel — battery hero with draggable charge thresholds, power flow chain, charge mode and USB options](preview.png)
 
 ## Features
 
