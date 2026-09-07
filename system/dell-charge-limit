@@ -1,0 +1,203 @@
+#!/bin/bash
+# dell-charge-limit — privileged charge/power controller for the
+# Omarchy widget io.github.nipsen.dell-power.
+#
+# All operations are validated against hardcoded allowlists. This script
+# never touches anything but:
+#   /sys/class/power_supply/BAT0/charge_control_{start,end}_threshold
+#   /sys/class/firmware-attributes/dell-wmi-sysman/attributes/<attr>/current_value
+#   /run/dell-power/state  (world-readable cache, refreshed as root)
+#
+# Usage :
+#   dell-charge-limit status
+#   dell-charge-limit set-start N
+#   dell-charge-limit set-end N
+#   dell-charge-limit wmi <attribut> <valeur>
+# Anything else is refused.
+
+set -u
+
+BAT=/sys/class/power_supply/BAT0
+WMI=/sys/class/firmware-attributes/dell-wmi-sysman/attributes
+STATE_DIR=/run/dell-power
+STATE=$STATE_DIR/state
+
+START_MIN=50
+START_MAX=95
+END_MIN=55
+END_MAX=100
+GAP=5
+
+declare -A WMI_ALLOWED=(
+  [PrimaryBattChargeCfg]="Standard Express Adaptive PrimAcUse Custom"
+  [LongLifeCyclePriBattery]="Enabled Disabled"
+  [UsbPowerShare]="Enabled Disabled"
+  [TypeCPower]="7.5W 15W"
+  [PeakShiftCfg]="Enabled Disabled"
+  [AdvBatteryChargeCfg]="Enabled Disabled"
+)
+
+fail() {
+  # L'erreur JSON part sur stdout (pour que le widget la parse et l'affiche)
+  # ET sur stderr (pour un usage terminal).
+  local m
+  m=$(jq -n --arg m "$1" '$m')
+  printf '%s\n' "$m"
+  printf '%s\n' "$m" >&2
+  exit 1
+}
+
+is_root() { [[ $(id -u) == 0 ]]; }
+
+wmi_read() {
+  cat "$WMI/$1/current_value" 2>/dev/null || true
+}
+
+wmi_write() {
+  printf '%s' "$2" > "$WMI/$1/current_value" 2>/dev/null
+}
+
+read_threshold() {
+  cat "$BAT/charge_control_$1_threshold" 2>/dev/null || true
+}
+
+read_ec_json() {
+  local s e
+  s=$(read_threshold start)
+  e=$(read_threshold end)
+  jq -n --arg s "$s" --arg e "$e" \
+    '{start:(if $s == "" then null else ($s|tonumber) end),
+      end:(if $e == "" then null else ($e|tonumber) end)}'
+}
+
+read_wmi_json() {
+  jq -n \
+    --arg m "$(wmi_read PrimaryBattChargeCfg)" \
+    --arg l "$(wmi_read LongLifeCyclePriBattery)" \
+    --arg u "$(wmi_read UsbPowerShare)" \
+    --arg t "$(wmi_read TypeCPower)" \
+    --arg p "$(wmi_read PeakShiftCfg)" \
+    --arg a "$(wmi_read AdvBatteryChargeCfg)" \
+    '{mode:(if $m == "" then null else $m end),
+      llc:(if $l == "" then null else $l end),
+      usbPowerShare:(if $u == "" then null else $u end),
+      typeCPower:(if $t == "" then null else $t end),
+      peakShift:(if $p == "" then null else $p end),
+      advBatteryCharge:(if $a == "" then null else $a end)}'
+}
+
+write_cache() { # $1 = json WMI
+  local tmp=$STATE.tmp
+  if mkdir -p "$STATE_DIR" && \
+     jq -n --argjson w "$1" --argjson t "$(read_ec_json)" --arg ts "$(date +%s)" \
+       '{thresholds:$t, wmi:$w, updatedAt:$ts}' > "$tmp" 2>/dev/null; then
+    mv "$tmp" "$STATE"
+  fi
+}
+
+load_cache() { cat "$STATE" 2>/dev/null || printf '{}'; }
+
+cmd_status() {
+  local ec wmi src dell=false
+  [[ -d $WMI ]] && dell=true
+  ec=$(read_ec_json)
+  if is_root; then
+    wmi=$(read_wmi_json)
+    # At boot, the dell-wmi-sysman interface appears progressively:
+    # retry briefly until the charge mode is readable.
+    local attempt=0
+    while (( attempt < 10 )) && $dell && [[ -z $(printf '%s' "$wmi" | jq -r '.mode // empty') ]]; do
+      sleep 1
+      wmi=$(read_wmi_json)
+      attempt=$(( attempt + 1 ))
+    done
+    write_cache "$wmi" 2>/dev/null || true
+    src=live
+  else
+    wmi=$(load_cache | jq -c '.wmi // {}')
+    src=cache
+  fi
+  jq -n --argjson t "$ec" --argjson w "$wmi" --arg s "$src" --argjson d "$dell" \
+    '{ok:true, dell:$d, source:$s, thresholds:$t, wmi:$w}'
+}
+
+cmd_set() {
+  local which=$1
+  local value=${2:-}
+  [[ $value =~ ^[0-9]+$ ]] || fail "invalid value: $value"
+
+  local start end
+  start=$(read_threshold start)
+  end=$(read_threshold end)
+  [[ -n $start && -n $end ]] || fail "no battery"
+
+  local nstart nend
+  if [[ $which == start ]]; then
+    (( value >= START_MIN && value <= START_MAX )) || fail "start out of range ($START_MIN-$START_MAX)"
+    nstart=$value
+    nend=$end
+    if (( nend < nstart + GAP )); then nend=$(( nstart + GAP )); fi
+    (( nend <= END_MAX )) || fail "impossible: end would exceed $END_MAX"
+  else
+    (( value >= END_MIN && value <= END_MAX )) || fail "end out of range ($END_MIN-$END_MAX)"
+    nend=$value
+    nstart=$start
+    if (( nstart > nend - GAP )); then nstart=$(( nend - GAP )); fi
+    (( nstart >= START_MIN )) || fail "impossible: start would go below $START_MIN"
+  fi
+
+  # Les seuils ne s'appliquent qu'en mode Custom.
+  wmi_write PrimaryBattChargeCfg Custom
+  [[ $(wmi_read PrimaryBattChargeCfg) == Custom ]] || fail "unable to switch to Custom mode"
+
+  printf '%d' "$nstart" > "$BAT/charge_control_start_threshold" 2>/dev/null \
+    || fail "start write refused"
+  printf '%d' "$nend" > "$BAT/charge_control_end_threshold" 2>/dev/null \
+    || fail "end write refused"
+
+  local rs re
+  rs=$(read_threshold start)
+  re=$(read_threshold end)
+  if [[ $rs != $nstart || $re != $nend ]]; then
+    fail "the firmware adjusted the values ($rs/$re instead of $nstart/$nend)"
+  fi
+
+  local wmi
+  wmi=$(read_wmi_json)
+  write_cache "$wmi" 2>/dev/null || true
+  jq -n --argjson t "$(read_ec_json)" --argjson w "$wmi" \
+    '{ok:true, dell:true, source:"live", thresholds:$t, wmi:$w}'
+}
+
+cmd_wmi() {
+  local attr=${1:-} value=${2:-}
+  [[ -n $attr ]] || fail "attribute required"
+  [[ -v WMI_ALLOWED[$attr] ]] || fail "unknown attribute: $attr"
+
+  local allowed=${WMI_ALLOWED[$attr]} found=""
+  local v
+  for v in $allowed; do [[ $v == "$value" ]] && found=1; done
+  [[ -n $found ]] || fail "value not allowed for $attr: $value"
+
+  wmi_write "$attr" "$value" || fail "write refused by the firmware"
+
+  local rb wmi
+  rb=$(wmi_read "$attr")
+  wmi=$(read_wmi_json)
+  write_cache "$wmi" 2>/dev/null || true
+  if [[ $rb == "$value" ]]; then
+    jq -n --argjson w "$wmi" '{ok:true, dell:true, applied:true, wmi:$w}'
+  else
+    jq -n --argjson w "$wmi" --arg rb "$rb" \
+      '{ok:true, dell:true, applied:false, readback:$rb, wmi:$w}'
+  fi
+}
+
+cmd=${1:-}
+case "$cmd" in
+  status) cmd_status ;;
+  set-start) cmd_set start "${2:-}" ;;
+  set-end) cmd_set end "${2:-}" ;;
+  wmi) cmd_wmi "${@:2}" ;;
+  *) fail "unknown command: ${cmd:-}" ;;
+esac

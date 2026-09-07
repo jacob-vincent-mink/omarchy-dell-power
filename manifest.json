@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.nipsen.dell-power",
+  "name": "Dell Power",
+  "version": "1.0.0",
+  "author": "NIPSEN",
+  "description": "Battery, Dell charge limit, power profile, and system stats",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Dell Power",
+    "description": "Battery, Dell charge limit, power profile, and system stats",
+    "category": "System",
+    "allowMultiple": false,
+    "defaults": {
+      "showPercentage": false,
+      "chargeLimitStep": 5
+    },
+    "schema": [
+      {
+        "key": "showPercentage",
+        "type": "boolean",
+        "label": "Show battery percentage in the bar"
+      },
+      {
+        "key": "chargeLimitStep",
+        "type": "integer",
+        "label": "Charge limit step"
+      }
+    ]
+  },
+  "omarchy": {
+    "derivedFrom": "omarchy.power"
+  }
+}
