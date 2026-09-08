@@ -350,7 +350,8 @@ Panel {
   }
 
   // Battery node sub-line: pack voltage and current (+ in, − out, same
-  // convention as signedWatt).
+  // convention as signedWatt). One decimal on the amps: two overflow the
+  // third-width tile when the minus sign shows up.
   function batterySubText() {
     if (!powerChain) return ""
     var parts = []
@@ -358,7 +359,7 @@ Panel {
     if (powerChain.packA !== null) {
       var a = powerChain.packA
       var sign = a > 0.005 ? "+" : (a < -0.005 ? "−" : "")
-      parts.push(sign + Math.abs(a).toFixed(2) + " A")
+      parts.push(sign + Math.abs(a).toFixed(1) + " A")
     }
     return parts.join(" · ")
   }
@@ -1289,7 +1290,9 @@ Panel {
           color: root.bar.foreground
           opacity: 0.5
           font.family: root.bar.fontFamily
-          font.pixelSize: Style.font.caption
+          // Slightly smaller than caption: the battery sub packs
+          // "8.68 V · 1.84 A" into a third-width tile.
+          font.pixelSize: Math.max(8, Style.font.caption - 1)
           anchors.horizontalCenter: parent.horizontalCenter
           elide: Text.ElideRight
           width: parent.width

@@ -26,7 +26,7 @@ Dell laptops exposed through `dell-smm-hwmon` / `dell-wmi-sysman`
   (the EC reports unsigned current even while discharging), so a weak USB-C
   adapter that leaves the battery powering the laptop is shown correctly:
   negative battery flow, tiny adapter contribution. The battery tile also
-  shows live pack voltage and current (`8.68 V · +1.84 A` — same ±
+  shows live pack voltage and current (`8.68 V · +1.8 A` — same ±
   convention as the watts).
 - **Charge limit on the battery bar** — the start/stop thresholds are drawn
   directly on the battery progress bar (accent zone + draggable markers,
