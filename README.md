@@ -78,10 +78,13 @@ Dell laptops exposed through `dell-smm-hwmon` / `dell-wmi-sysman`
 **Sans l'étape 2**, le widget fonctionne comme un simple indicateur batterie
 (pourcentage, stats, profils d'alimentation) et toutes les sections Dell —
 charge limit, charge mode, USB, **power flow** — restent cachées, sans erreur
-ni prompt. Le power flow exige le helper par conception : les compteurs
-d'énergie RAPL sont en lecture root-only par défaut du noyau (PLATYPUS /
-CVE-2020-8694), il n'existe aucun chemin non privilégié — le helper les
-échantillonne en root et ne renvoie que des watts agrégés sur 1 s.
+ni prompt. Le panneau affiche alors une section **DELL SETUP** avec la
+commande exacte à lancer (cliquer dessus la copie dans le presse-papier) ;
+elle disparaît dès que le helper est installé. Le power flow exige le helper
+par conception : les compteurs d'énergie RAPL sont en lecture root-only par
+défaut du noyau (PLATYPUS / CVE-2020-8694), il n'existe aucun chemin non
+privilégié — le helper les échantillonne en root et ne renvoie que des watts
+agrégés sur 1 s.
 
 ### What install-system.sh installs
 

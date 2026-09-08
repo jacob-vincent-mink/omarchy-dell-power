@@ -21,6 +21,8 @@ Panel {
   property bool cursorActive: false
   property var dellStatus: null
   property bool dellBusy: false
+  property bool dellProbed: false
+  property bool setupCopied: false
   property string dellError: ""
   property string dellActionOutput: ""
   property string dellActionError: ""
@@ -35,6 +37,11 @@ Panel {
   readonly property bool dellSupported: dellStatus !== null && dellStatus.ok === true && dellStatus.dell === true
   readonly property bool dellThresholdsReady: dellSupported && dellStatus.hasThresholds
   readonly property bool dellWmiReady: dellSupported && dellStatus.hasWmi
+  // Fresh clone before install-system.sh: the status poll fails (helper not
+  // on PATH), so dellStatus stays null once probed. A non-Dell machine with
+  // the helper installed answers {dell:false} instead — no hint there.
+  readonly property bool helperMissing: dellProbed && dellStatus === null
+  readonly property string setupCommand: "sudo ~/.config/omarchy/plugins/io.github.nipsen.dell-power/install-system.sh"
   property bool draggingStart: false
   property bool draggingStop: false
   property int previewStart: -1
@@ -435,8 +442,18 @@ Panel {
 
   Process {
     id: dellProc
-    command: ["dell-charge-limit", "status"]
-    stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.updateDellStatus(text) }
+    // The timeout wrapper keeps the probe observable: with the helper not
+    // installed the bare command never starts (no exit, no stream end) and
+    // dellProbed would stay false forever — timeout exits 127 instead.
+    command: ["timeout", "-k", "5", "20", "dell-charge-limit", "status"]
+    onExited: root.dellProbed = true
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        root.dellProbed = true
+        root.updateDellStatus(text)
+      }
+    }
   }
 
   Process {
@@ -480,6 +497,21 @@ Panel {
     id: dellRootRefreshProc
     command: ["timeout", "-k", "5", "20", "sudo", "-n", "/usr/local/bin/dell-charge-limit", "status"]
     stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.updateDellStatus(text) }
+  }
+
+  Process {
+    id: setupCopyProc
+    command: ["wl-copy", root.setupCommand]
+    onExited: {
+      root.setupCopied = true
+      setupCopiedTimer.restart()
+    }
+  }
+
+  Timer {
+    id: setupCopiedTimer
+    interval: 1500
+    onTriggered: root.setupCopied = false
   }
 
   Timer { interval: 5000; running: root.opened; repeat: true; onTriggered: { root.refresh(); root.refreshDell(); root.refreshPowerChain() } }
@@ -948,6 +980,64 @@ Panel {
                   }
                 }
               }
+            }
+          }
+        }
+
+        // ---------- Setup hint (helper not installed yet) ----------
+        PanelSeparator {
+          foreground: root.bar.foreground
+          visible: root.helperMissing
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(6)
+          visible: root.helperMissing
+
+          PanelSectionHeader {
+            text: "DELL SETUP"
+            foreground: root.bar.foreground
+            fontFamily: root.bar.fontFamily
+          }
+
+          Text {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            textFormat: Text.PlainText
+            text: "Charge modes, thresholds, USB options and power flow need the system helper — run this once in a terminal:"
+            color: Qt.darker(root.bar.foreground, 1.4)
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          Rectangle {
+            width: parent.width
+            implicitHeight: setupCmdText.implicitHeight + Style.space(10)
+            radius: Math.max(2, Style.cornerRadius)
+            color: "transparent"
+            border.width: 1
+            border.color: Qt.rgba(root.bar.foreground.r, root.bar.foreground.g, root.bar.foreground.b, setupCmdMouse.containsMouse ? 0.6 : 0.3)
+
+            Text {
+              id: setupCmdText
+              anchors.centerIn: parent
+              width: parent.width - Style.space(10)
+              wrapMode: Text.WrapAnywhere
+              textFormat: Text.PlainText
+              text: root.setupCopied ? "Copied — paste it in a terminal" : root.setupCommand
+              color: root.bar.foreground
+              opacity: root.setupCopied ? 0.6 : 1
+              font.family: root.bar.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+
+            MouseArea {
+              id: setupCmdMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: if (!setupCopyProc.running) setupCopyProc.running = true
             }
           }
         }
