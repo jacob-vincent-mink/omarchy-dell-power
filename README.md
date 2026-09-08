@@ -13,13 +13,13 @@ Dell laptops exposed through `dell-smm-hwmon` / `dell-wmi-sysman`
 - Battery percentage, state, size and cycle count
 - AC/battery power profiles (power-profiles-daemon)
 - **Power flow chain** — live energy flow with a fixed layout:
-  `[Secteur: adapter W] ⇄ [Composants: CPU / iGPU / RAM / Autre] ⇄ [Batterie: ±W]`.
+  `[Source: adapter W] ⇄ [Components: CPU / iGPU / RAM / Other] ⇄ [Battery: ±W]`.
   Animated pixel dots show the flow direction. The adapter tile shows the
   total it provides (RAPL `psys`, which measures the platform *excluding*
   battery charge on this EC, plus the charge power). CPU and RAM come from
   the `package-0` and `dram` RAPL domains; iGPU is deduced as
-  package − core − uncore; "Autre" (screen, storage, PCH, fans…) is the
-  deduced remainder (composants − CPU − RAM). The breakdown is hidden behind
+  package − core − uncore; "Other" (screen, storage, PCH, fans…) is the
+  deduced remainder (components − CPU − RAM). The breakdown is hidden behind
   the small `+` button on the components tile. The battery always stays on
   the right. On battery, component draw is measured from the battery
   discharge. The battery current sign is corrected from the battery STATE
@@ -75,16 +75,15 @@ Dell laptops exposed through `dell-smm-hwmon` / `dell-wmi-sysman`
    omarchy restart shell
    ```
 
-**Sans l'étape 2**, le widget fonctionne comme un simple indicateur batterie
-(pourcentage, stats, profils d'alimentation) et toutes les sections Dell —
-charge limit, charge mode, USB, **power flow** — restent cachées, sans erreur
-ni prompt. Le panneau affiche alors une section **DELL SETUP** avec la
-commande exacte à lancer (cliquer dessus la copie dans le presse-papier) ;
-elle disparaît dès que le helper est installé. Le power flow exige le helper
-par conception : les compteurs d'énergie RAPL sont en lecture root-only par
-défaut du noyau (PLATYPUS / CVE-2020-8694), il n'existe aucun chemin non
-privilégié — le helper les échantillonne en root et ne renvoie que des watts
-agrégés sur 1 s.
+**Without step 2**, the widget works as a plain battery indicator
+(percentage, stats, power profiles) and every Dell section — charge limit,
+charge mode, USB, **power flow** — stays hidden, with no error and no prompt.
+The panel then shows a **DELL SETUP** section with the exact command to run
+(click it to copy to the clipboard); it disappears as soon as the helper is
+installed. The power flow requires the helper by design: the RAPL energy
+counters are root-only reads by kernel default (PLATYPUS / CVE-2020-8694) and
+there is no unprivileged path — the helper samples them as root and only
+returns 1-second aggregate watts.
 
 ### What install-system.sh installs
 
@@ -184,15 +183,15 @@ fails to apply, force a rescan with `omarchy-shell shell rescanPlugins`
 omarchy plugin validate .
 node Model.test.js
 
-# qmllint (fourni par qt6-declarative, hors PATH) — les modules qs.* du shell
-# doivent être visibles comme qs/Commons et qs/Ui dans un import path :
-mkdir -p /tmp/qmlroot/qs   # /tmp est vidé au reboot — à refaire au besoin
+# qmllint (ships with qt6-declarative, not on PATH) — the shell's qs.*
+# modules must be visible as qs/Commons and qs/Ui in an import path:
+mkdir -p /tmp/qmlroot/qs   # /tmp is wiped on reboot — recreate as needed
 ln -sfn /usr/share/omarchy/shell/Commons /tmp/qmlroot/qs/Commons
 ln -sfn /usr/share/omarchy/shell/Ui /tmp/qmlroot/qs/Ui
 /usr/lib/qt6/bin/qmllint -I /tmp/qmlroot -I /usr/lib/qt6/qml Panel.qml
-# Attendu : uniquement les warnings habituels (missing-property sur bar/Style,
-# unqualified access dans les inline components) — aussi présents sur le
-# widget omarchy.power d'origine.
+# Expected: only the usual warnings (missing-property on bar/Style,
+# unqualified access in inline components) — also present on the stock
+# omarchy.power widget.
 
 qs log -p /usr/share/omarchy/shell --tail 100           # QML errors land here
 ```
