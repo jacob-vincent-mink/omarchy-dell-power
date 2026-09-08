@@ -465,7 +465,11 @@ Panel {
 
   Process {
     id: powerChainProc
-    command: [Quickshell.env("HOME") + "/.config/omarchy/plugins/io.github.nipsen.dell-power/scripts/power-chain.sh"]
+    // The RAPL counters are root-only by kernel default, so the sampling goes
+    // through the allowlisted helper as root (silent thanks to the sudoers
+    // rule). No helper / no rule → the process fails and the power-flow
+    // section simply stays hidden.
+    command: ["timeout", "-k", "5", "20", "sudo", "-n", "/usr/local/bin/dell-charge-limit", "power-chain"]
     stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.updatePowerChain(text) }
   }
 

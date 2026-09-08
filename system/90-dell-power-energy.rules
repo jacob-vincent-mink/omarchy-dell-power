@@ -1,3 +1,0 @@
-# io.github.nipsen.dell-power — rendre les compteurs RAPL (dont psys)
-# lisibles par les utilisateurs pour le calcul de la puissance système.
-SUBSYSTEM=="powercap", KERNEL=="intel-rapl*", ACTION=="add|change", RUN+="/bin/sh -c '/bin/chmod 0444 /sys/class/powercap/intel-rapl*/energy_uj'"

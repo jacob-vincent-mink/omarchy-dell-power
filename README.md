@@ -27,7 +27,10 @@ Dell laptops exposed through `dell-smm-hwmon` / `dell-wmi-sysman`
   adapter that leaves the battery powering the laptop is shown correctly:
   negative battery flow, tiny adapter contribution. The battery tile also
   shows live pack voltage and current (`8.68 V · +1.8 A` — same ±
-  convention as the watts).
+  convention as the watts). The sampling runs inside the privileged helper
+  (`dell-charge-limit power-chain`): the RAPL counters stay root-only and
+  the helper returns only 1-second aggregate watts. No helper → the whole
+  power-flow section simply stays hidden.
 - **Charge limit on the battery bar** — the start/stop thresholds are drawn
   directly on the battery progress bar (accent zone + draggable markers,
   step 5). Dragging a marker switches the charge mode to `Custom`
@@ -72,35 +75,53 @@ Dell laptops exposed through `dell-smm-hwmon` / `dell-wmi-sysman`
    omarchy restart shell
    ```
 
+**Sans l'étape 2**, le widget fonctionne comme un simple indicateur batterie
+(pourcentage, stats, profils d'alimentation) et toutes les sections Dell —
+charge limit, charge mode, USB, **power flow** — restent cachées, sans erreur
+ni prompt. Le power flow exige le helper par conception : les compteurs
+d'énergie RAPL sont en lecture root-only par défaut du noyau (PLATYPUS /
+CVE-2020-8694), il n'existe aucun chemin non privilégié — le helper les
+échantillonne en root et ne renvoie que des watts agrégés sur 1 s.
+
 ### What install-system.sh installs
 
 | Path | Purpose |
 |---|---|
-| `/usr/local/bin/dell-charge-limit` | Privileged helper (allowlisted operations only) |
+| `/usr/local/bin/dell-charge-limit` | Privileged helper (allowlisted operations only, incl. the power-flow sampler) |
 | `/usr/share/polkit-1/actions/io.github.nipsen.dell-power.policy` | polkit action (`auth_admin`, pinned path) — fallback path |
 | `/etc/sudoers.d/dell-power` | `NOPASSWD` sudo rule for the installing user, scoped to the helper — primary path |
 | `/etc/systemd/system/dell-power-state.service` | Oneshot priming `/run/dell-power/state` at boot |
-| `/etc/udev/rules.d/90-dell-power-energy.rules` | Makes the RAPL `energy_uj` counters (incl. `psys`) user-readable — Intel only, see Security notes |
 
-Reads (thresholds, battery, energy counters) need no privilege. Writes run
+The installer binds each payload to its reviewed bytes: embedded SHA-256
+digests, verified as root (regular file, expected owner, non-writable mode,
+digest) before installation, then re-verified on the installed files before
+anything is activated.
+
+Reads of thresholds and battery state need no privilege. Writes, and the
+power-flow sampling (RAPL counters are root-only by kernel default), run
 through `sudo -n /usr/local/bin/dell-charge-limit …`, which needs no password
 thanks to the narrow sudoers rule (the helper itself refuses everything
-outside its hardcoded allowlist). If the sudoers rule is missing, the widget
-falls back to `pkexec`, which asks for the password via the Omarchy polkit
-agent — so the password is still requested only when the rule was never
-installed.
+outside its hardcoded allowlist). If the sudoers rule is missing, *writes*
+fall back to `pkexec`, which asks for the password via the Omarchy polkit
+agent; the power-flow readout stays hidden instead.
 
 ## Security notes
 
-- The udev rule makes the RAPL energy counters world-readable (`0444`). The
-  kernel restricts them to root by default because they enable power
-  side-channel attacks (PLATYPUS, CVE-2020-8694). On a single-user laptop the
-  practical risk is low, and `--uninstall` restores the kernel default — but
-  you should know the trade-off before installing.
+- **No world-readable RAPL counters.** Earlier versions shipped a udev rule
+  making `energy_uj` world-readable (`0444`) for the power-flow feature. That
+  restored the PLATYPUS side channel (CVE-2020-8694) and was removed: the
+  helper now samples the counters as root and returns only bounded 1-second
+  aggregate watts. Installing this version immediately restores `0400`, as
+  does `--uninstall`.
 - The sudoers rule grants the installing user passwordless root on the helper
   path only. The helper validates every argument against hardcoded allowlists
-  (charge thresholds 50–95/55–100, six WMI attributes with fixed value sets),
-  so the reachable surface is exactly what the panel exposes.
+  (charge thresholds 50–95/55–100, six WMI attributes with fixed value sets,
+  plus the read-only `status` and `power-chain` commands), so the reachable
+  surface is exactly what the panel exposes.
+- `install-system.sh` never installs bytes it has not verified: each payload
+  in the user-writable checkout must match the SHA-256 digest embedded in the
+  installer (regular file, correct owner, non-writable, digest match), and the
+  installed files are re-hashed before `systemctl enable`.
 
 ## Configuration
 
