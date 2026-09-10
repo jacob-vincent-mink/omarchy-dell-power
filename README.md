@@ -69,6 +69,9 @@ Dell laptops exposed through `dell-smm-hwmon` / `dell-wmi-sysman`
    sudo ./install-system.sh
    ```
 
+   Step 2 needs network access: the installer verifies the payloads against
+   the publisher manifest fetched from GitHub at the checkout's HEAD commit.
+
 3. Restart the shell if it was already running:
 
    ```bash
@@ -94,10 +97,16 @@ returns 1-second aggregate watts.
 | `/etc/sudoers.d/dell-power` | `NOPASSWD` sudo rule for the installing user, scoped to the helper — primary path |
 | `/etc/systemd/system/dell-power-state.service` | Oneshot priming `/run/dell-power/state` at boot |
 
-The installer binds each payload to its reviewed bytes: embedded SHA-256
-digests, verified as root (regular file, expected owner, non-writable mode,
-digest) before installation, then re-verified on the installed files before
-anything is activated.
+The installer never trusts the user-writable checkout: the expected digests
+come from the publisher manifest (`SHA256SUMS`) fetched over HTTPS at the
+commit the checkout's HEAD points to — only bytes matching a commit actually
+pushed to GitHub can be installed, so uncommitted local changes are refused.
+Each payload is opened exactly once, through per-component directory
+descriptors with `O_NOFOLLOW` (no symlink/directory swap races), fstat-ed,
+hashed and copied to its destination from that same descriptor; the installed
+files are re-hashed before anything is activated. The privileged logic is a
+single Python program handed to the interpreter as one materialized heredoc,
+so it cannot be modified mid-execution.
 
 Reads of thresholds and battery state need no privilege. Writes, and the
 power-flow sampling (RAPL counters are root-only by kernel default), run
@@ -121,9 +130,11 @@ agent; the power-flow readout stays hidden instead.
   plus the read-only `status` and `power-chain` commands), so the reachable
   surface is exactly what the panel exposes.
 - `install-system.sh` never installs bytes it has not verified: each payload
-  in the user-writable checkout must match the SHA-256 digest embedded in the
-  installer (regular file, correct owner, non-writable, digest match), and the
-  installed files are re-hashed before `systemctl enable`.
+  in the user-writable checkout is opened once with `O_NOFOLLOW` through
+  verified directory descriptors, hashed from that descriptor and copied from
+  it, and must match the publisher manifest fetched over HTTPS at the
+  checkout's HEAD commit. The installed files are re-hashed before
+  `systemctl enable`.
 
 ## Configuration
 
@@ -178,6 +189,14 @@ sudo /usr/local/bin/dell-charge-limit set-end 100
 Files under `~/.config/omarchy/plugins/` hot-reload on save. If a change
 fails to apply, force a rescan with `omarchy-shell shell rescanPlugins`
 (or `omarchy restart shell` as a last resort).
+
+When a privileged payload (`system/*`) changes, regenerate the publisher
+manifest, then commit **and push** — installs only succeed at a pushed commit
+whose manifest matches the payloads:
+
+```bash
+sha256sum system/dell-charge-limit system/*.policy system/*.service > SHA256SUMS
+```
 
 ```bash
 omarchy plugin validate .
