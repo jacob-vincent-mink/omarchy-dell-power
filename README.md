@@ -66,11 +66,14 @@ Dell laptops exposed through `dell-smm-hwmon` / `dell-wmi-sysman`
 
    ```bash
    cd ~/.config/omarchy/plugins/io.github.nipsen.dell-power
-   sudo ./install-system.sh
+   ./install-system.sh
    ```
 
-   Step 2 needs network access: the installer verifies the payloads against
-   the publisher manifest fetched from GitHub at the checkout's HEAD commit.
+   Run it as your regular user: the wrapper is unprivileged and elevates only
+   the authenticated installer core via `sudo` (it will ask for your
+   password). Step 2 needs network access — the installer core, the manifest
+   and the payloads are all fetched from GitHub at the checkout's HEAD
+   commit; root never reads the user-writable checkout.
 
 3. Restart the shell if it was already running:
 
@@ -97,16 +100,19 @@ returns 1-second aggregate watts.
 | `/etc/sudoers.d/dell-power` | `NOPASSWD` sudo rule for the installing user, scoped to the helper — primary path |
 | `/etc/systemd/system/dell-power-state.service` | Oneshot priming `/run/dell-power/state` at boot |
 
-The installer never trusts the user-writable checkout: the expected digests
-come from the publisher manifest (`SHA256SUMS`) fetched over HTTPS at the
-commit the checkout's HEAD points to — only bytes matching a commit actually
-pushed to GitHub can be installed, so uncommitted local changes are refused.
-Each payload is opened exactly once, through per-component directory
-descriptors with `O_NOFOLLOW` (no symlink/directory swap races), fstat-ed,
-hashed and copied to its destination from that same descriptor; the installed
-files are re-hashed before anything is activated. The privileged logic is a
-single Python program handed to the interpreter as one materialized heredoc,
-so it cannot be modified mid-execution.
+The wrapper fetches the installer core and the publisher manifest
+(`SHA256SUMS`) over HTTPS at the checkout's HEAD commit (single publisher
+host, no redirects, bounded sizes, hard deadlines), authenticates the core's
+bytes against the manifest *before* privilege is granted, then hands them to
+the interpreter through an anonymous pipe — root never opens a path from the
+user-writable checkout, and only bytes matching a commit actually pushed to
+GitHub ever run as root. The core re-fetches each payload from the publisher,
+verifies it against the manifest, and activates transactionally: the existing
+sudoers authorization is revoked first, every payload is staged (`O_EXCL`,
+0600) and digest-checked, the privileged set is committed, the installed
+files are re-hashed, and the validated sudoers rule is restored last — any
+failure rolls back to the prior complete set. Child processes run from
+absolute paths with a closed environment and process-group cleanup.
 
 Reads of thresholds and battery state need no privilege. Writes, and the
 power-flow sampling (RAPL counters are root-only by kernel default), run
@@ -129,12 +135,16 @@ agent; the power-flow readout stays hidden instead.
   (charge thresholds 50–95/55–100, six WMI attributes with fixed value sets,
   plus the read-only `status` and `power-chain` commands), so the reachable
   surface is exactly what the panel exposes.
-- `install-system.sh` never installs bytes it has not verified: each payload
-  in the user-writable checkout is opened once with `O_NOFOLLOW` through
-  verified directory descriptors, hashed from that descriptor and copied from
-  it, and must match the publisher manifest fetched over HTTPS at the
-  checkout's HEAD commit. The installed files are re-hashed before
-  `systemctl enable`.
+- Privileged-code provenance: root executes only publisher bytes. The
+  installer core is fetched over HTTPS at the checkout's HEAD commit,
+  digest-verified against the publisher manifest *before* elevation, and
+  handed to the interpreter through an anonymous pipe — no mutable checkout
+  path is ever opened as root. Payloads are verified against the same
+  manifest, staged `O_EXCL`, and activated transactionally: the existing
+  sudoers authorization is revoked first, the validated rule is restored
+  last, and any failure rolls back to the prior complete set. Child processes
+  run from absolute paths with a closed environment, hard deadlines and
+  process-group cleanup.
 
 ## Configuration
 
@@ -173,9 +183,12 @@ Inline settings in the widget's `shell.json` bar entry:
 ## Remove
 
 ```bash
+~/.config/omarchy/plugins/io.github.nipsen.dell-power/install-system.sh --uninstall
 omarchy plugin remove io.github.nipsen.dell-power
-sudo ~/.config/omarchy/plugins/io.github.nipsen.dell-power/install-system.sh --uninstall
 ```
+
+Uninstall first: `omarchy plugin remove` deletes the checkout that the
+uninstaller uses to resolve which published commit to fetch.
 
 Removing the plugin does not reset the charge thresholds stored in the
 battery EC. Set the values you want before removal, e.g.:
@@ -195,7 +208,7 @@ manifest, then commit **and push** — installs only succeed at a pushed commit
 whose manifest matches the payloads:
 
 ```bash
-sha256sum system/dell-charge-limit system/*.policy system/*.service > SHA256SUMS
+sha256sum system/installer.py system/dell-charge-limit system/*.policy system/*.service > SHA256SUMS
 ```
 
 ```bash

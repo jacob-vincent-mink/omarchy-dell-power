@@ -41,7 +41,7 @@ Panel {
   // on PATH), so dellStatus stays null once probed. A non-Dell machine with
   // the helper installed answers {dell:false} instead — no hint there.
   readonly property bool helperMissing: dellProbed && dellStatus === null
-  readonly property string setupCommand: "sudo ~/.config/omarchy/plugins/io.github.nipsen.dell-power/install-system.sh"
+  readonly property string setupCommand: "~/.config/omarchy/plugins/io.github.nipsen.dell-power/install-system.sh"
   property bool draggingStart: false
   property bool draggingStop: false
   property int previewStart: -1
