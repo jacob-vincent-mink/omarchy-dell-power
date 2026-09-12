@@ -30,6 +30,13 @@ Panel {
   property bool dellTriedPkexec: false
   property bool dellActionHandled: false
   property var powerChain: null
+  // Every spawned process runs with absolute executables and a closed,
+  // minimal environment: a shadowed binary earlier in the shell PATH must
+  // never get code execution (or impersonate the privilege UI) on routine
+  // plugin activity. The helper is only ever invoked by its fixed installed
+  // path. (The omarchy tools call each other internally, hence their dir.)
+  readonly property string helperPath: "/usr/local/bin/dell-charge-limit"
+  readonly property var procEnv: ({ "PATH": "/usr/share/omarchy/bin:/usr/bin:/bin" })
   readonly property int chargeLimitStep: {
     var s = Number(setting("chargeLimitStep", 5))
     return (isFinite(s) && s > 0) ? Math.min(60, Math.round(s)) : 5
@@ -192,7 +199,7 @@ Panel {
 
   function setProfile(profile) {
     if (!profile || actionProc.running) return
-    actionProc.command = ["omarchy-powerprofiles-set", root.discharging ? "battery" : "ac", profile]
+    actionProc.command = ["/usr/bin/timeout", "-k", "5", "15", "/usr/share/omarchy/bin/omarchy-powerprofiles-set", root.discharging ? "battery" : "ac", profile]
     actionProc.running = true
   }
 
@@ -225,7 +232,7 @@ Panel {
     // Primary path: sudo -n (silent thanks to the sudoers rule
     // installed by install-system.sh). If it fails (missing rule),
     // onDellActionFinished retries ONCE with pkexec (dialog).
-    dellActionProc.command = ["timeout", "-k", "5", "120", "sudo", "-n", "/usr/local/bin/dell-charge-limit"].concat(args)
+    dellActionProc.command = ["/usr/bin/timeout", "-k", "5", "120", "/usr/bin/sudo", "-n", root.helperPath].concat(args)
     dellActionProc.running = true
   }
 
@@ -239,7 +246,7 @@ Panel {
         dellActionHandled = false
         dellActionOutput = ""
         dellActionError = ""
-        dellActionProc.command = ["timeout", "-k", "5", "300", "pkexec", "/usr/local/bin/dell-charge-limit"].concat(dellActionArgs)
+        dellActionProc.command = ["/usr/bin/timeout", "-k", "5", "300", "/usr/bin/pkexec", root.helperPath].concat(dellActionArgs)
         dellActionProc.running = true
         return
       }
@@ -419,59 +426,71 @@ Panel {
 
   Process {
     id: batteryProc
-    command: ["omarchy-battery-status", "--shell"]
-    stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.updateKeyValue(text, "battery") }
+    clearEnvironment: true
+    environment: root.procEnv
+    command: ["/usr/bin/timeout", "-k", "5", "15", "/usr/share/omarchy/bin/omarchy-battery-status", "--shell"]
+    stdout: CappedCollector { proc: batteryProc; onFinished: t => root.updateKeyValue(t, "battery") }
   }
 
   Process {
     id: profilesProc
-    command: ["omarchy-powerprofiles-list", "--active-state"]
-    stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.updateProfiles(text) }
+    clearEnvironment: true
+    environment: root.procEnv
+    command: ["/usr/bin/timeout", "-k", "5", "15", "/usr/share/omarchy/bin/omarchy-powerprofiles-list", "--active-state"]
+    stdout: CappedCollector { proc: profilesProc; onFinished: t => root.updateProfiles(t) }
   }
 
   Process {
     id: systemProc
-    command: ["omarchy-system-stats"]
-    stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.updateKeyValue(text, "system") }
+    clearEnvironment: true
+    environment: root.procEnv
+    command: ["/usr/bin/timeout", "-k", "5", "15", "/usr/share/omarchy/bin/omarchy-system-stats"]
+    stdout: CappedCollector { proc: systemProc; onFinished: t => root.updateKeyValue(t, "system") }
   }
 
   Process {
     id: actionProc
+    clearEnvironment: true
+    environment: root.procEnv
     onExited: root.refresh()
   }
 
   Process {
     id: dellProc
+    clearEnvironment: true
+    environment: root.procEnv
     // The timeout wrapper keeps the probe observable: with the helper not
-    // installed the bare command never starts (no exit, no stream end) and
+    // installed the command never starts (no exit, no stream end) and
     // dellProbed would stay false forever — timeout exits 127 instead.
-    command: ["timeout", "-k", "5", "20", "dell-charge-limit", "status"]
+    command: ["/usr/bin/timeout", "-k", "5", "20", root.helperPath, "status"]
     onExited: root.dellProbed = true
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
+    stdout: CappedCollector {
+      proc: dellProc
+      onFinished: t => {
         root.dellProbed = true
-        root.updateDellStatus(text)
+        root.updateDellStatus(t)
       }
     }
   }
 
   Process {
     id: dellActionProc
+    clearEnvironment: true
+    environment: root.procEnv
     // The decision is made in onDellActionFinished, fired when the stdout
     // stream ends (waitForEnd). onExited may fire BEFORE the output is
     // delivered: a plain onExited would read an empty output and wrongly
     // trigger the pkexec fallback. The timer is a safety net if the stream
     // never ends (process failed to start).
     onExited: dellActionDoneTimer.start()
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        root.dellActionOutput = text
+    stdout: CappedCollector {
+      proc: dellActionProc
+      onFinished: t => {
+        root.dellActionOutput = t
         root.onDellActionFinished()
       }
     }
-    stderr: StdioCollector { waitForEnd: true; onStreamFinished: root.dellActionError = text }
+    stderr: CappedCollector { proc: dellActionProc; onFinished: t => root.dellActionError = t }
   }
 
   Timer {
@@ -482,12 +501,14 @@ Panel {
 
   Process {
     id: powerChainProc
+    clearEnvironment: true
+    environment: root.procEnv
     // The RAPL counters are root-only by kernel default, so the sampling goes
     // through the allowlisted helper as root (silent thanks to the sudoers
     // rule). No helper / no rule → the process fails and the power-flow
     // section simply stays hidden.
-    command: ["timeout", "-k", "5", "20", "sudo", "-n", "/usr/local/bin/dell-charge-limit", "power-chain"]
-    stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.updatePowerChain(text) }
+    command: ["/usr/bin/timeout", "-k", "5", "20", "/usr/bin/sudo", "-n", root.helperPath, "power-chain"]
+    stdout: CappedCollector { proc: powerChainProc; onFinished: t => root.updatePowerChain(t) }
   }
 
   // Silent self-heal: if the WMI cache is stale (null values written
@@ -495,13 +516,19 @@ Panel {
   // via sudo -n (NOPASSWD) refreshes it without a password prompt.
   Process {
     id: dellRootRefreshProc
-    command: ["timeout", "-k", "5", "20", "sudo", "-n", "/usr/local/bin/dell-charge-limit", "status"]
-    stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.updateDellStatus(text) }
+    clearEnvironment: true
+    environment: root.procEnv
+    command: ["/usr/bin/timeout", "-k", "5", "20", "/usr/bin/sudo", "-n", root.helperPath, "status"]
+    stdout: CappedCollector { proc: dellRootRefreshProc; onFinished: t => root.updateDellStatus(t) }
   }
 
   Process {
     id: setupCopyProc
-    command: ["wl-copy", root.setupCommand]
+    clearEnvironment: true
+    environment: root.procEnv
+    // No deadline here: wl-copy forks and must keep running to serve the
+    // paste; killing it would drop the clipboard content.
+    command: ["/usr/bin/wl-copy", root.setupCommand]
     onExited: {
       root.setupCopied = true
       setupCopiedTimer.restart()
@@ -1251,6 +1278,28 @@ Panel {
     enabled: !busy
     active: isOn
     onClicked: triggered()
+  }
+
+  // StdioCollector with a live byte ceiling: past the cap the process is
+  // killed and the consumer receives an empty payload (parses to null /
+  // keeps last known data), so a runaway binary cannot exhaust shell memory
+  // through routine refreshes.
+  component CappedCollector: StdioCollector {
+    id: capped
+    required property Process proc
+    property int cap: 262144
+    property bool overflow: false
+    waitForEnd: true
+    signal finished(string text)
+    onDataChanged: if (!overflow && data.length > cap) { overflow = true; proc.signal(9) }
+    onStreamFinished: {
+      // overflow implies data flowed, which guarantees the stream ends (we
+      // kill the process), so resetting here is safe.
+      var wasOverflow = overflow
+      overflow = false
+      if (wasOverflow) finished("")
+      else finished(text)
+    }
   }
 
   component FlowArrow: Item {
