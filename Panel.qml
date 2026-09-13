@@ -44,6 +44,19 @@ Panel {
   readonly property bool dellSupported: dellStatus !== null && dellStatus.ok === true && dellStatus.dell === true
   readonly property bool dellThresholdsReady: dellSupported && dellStatus.hasThresholds
   readonly property bool dellWmiReady: dellSupported && dellStatus.hasWmi
+  readonly property bool usbPowerShareReady: dellWmiReady && dellStatus.usbPowerShare !== ""
+  readonly property bool typeCPowerReady: dellWmiReady && dellStatus.typeCPower !== ""
+  // Alienware laptops (and any whose helper reports them): the firmware's thermal
+  // modes, and the fans and temperatures the EC reports.
+  readonly property string brand: dellStatus !== null ? dellStatus.brand : "Dell"
+  readonly property var thermal: dellStatus !== null ? dellStatus.thermal : null
+  readonly property var thermalModes: Model.thermalChoices(thermal)
+  readonly property bool thermalReady: thermal !== null && Model.thermalExtended(thermal)
+  readonly property var fans: dellStatus !== null ? dellStatus.fans : []
+  readonly property var fanNames: Model.fanNames(fans)
+  readonly property var temps: dellStatus !== null ? dellStatus.temps : []
+  readonly property bool sensorsReady: fans.length > 0 || temps.length > 0
+  readonly property bool fanBoostAvailable: Model.groupBoost(fans, "cpu") !== null || Model.groupBoost(fans, "gpu") !== null
   // Fresh clone before install-system.sh: the status poll fails (helper not
   // on PATH), so dellStatus stays null once probed. A non-Dell machine with
   // the helper installed answers {dell:false} instead — no hint there.
@@ -296,6 +309,20 @@ Panel {
   function setDellTypeCPower(value) {
     if (!dellWmiReady || value === dellStatus.typeCPower) return
     dellRun(["wmi", "TypeCPower", value])
+  }
+
+  // ---------- Thermal mode and fan boost ----------
+
+  function setThermalProfile(name) {
+    if (thermal === null || name === thermal.profile) return
+    dellRun(["profile", name])
+  }
+
+  // The slider speaks percent; the kernel takes 0-255 per fan.
+  function setFanBoost(group, percent) {
+    var value = Math.round(Math.max(0, Math.min(100, Number(percent))) / 100 * 255)
+    if (value === Model.groupBoost(fans, group)) return
+    dellRun(["fan-boost", group, String(value)])
   }
 
   // ---------- Charge thresholds on the battery bar ----------
@@ -1011,6 +1038,121 @@ Panel {
           }
         }
 
+        // ---------- Thermal mode (firmware modes power-profiles-daemon cannot reach) ----------
+        PanelSeparator {
+          foreground: root.bar.foreground
+          visible: root.thermalReady
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(10)
+          visible: root.thermalReady
+
+          PanelSectionHeader {
+            text: root.brand.toUpperCase() + " THERMAL MODE"
+            foreground: root.bar.foreground
+            fontFamily: root.bar.fontFamily
+          }
+
+          Grid {
+            id: thermalGrid
+            width: parent.width
+            columns: root.thermalModes.length > 6 ? 4 : 3
+            spacing: Style.space(6)
+
+            readonly property real cellWidth: (width - spacing * (columns - 1)) / columns
+
+            Repeater {
+              model: root.thermalModes
+              Button {
+                required property var modelData
+                width: thermalGrid.cellWidth
+                iconText: Model.thermalIcon(String(modelData))
+                iconSize: Style.font.title
+                text: Model.thermalLabel(String(modelData))
+                fontSize: Style.font.bodySmall
+                foreground: root.bar.foreground
+                fontFamily: root.bar.fontFamily
+                horizontalPadding: Style.spacing.controlPaddingX
+                verticalPadding: Style.spacing.controlPaddingY + Style.space(2)
+                bordered: true
+                enabled: !root.dellBusy
+                active: root.thermal !== null && root.thermal.profile === modelData
+                tooltipText: Model.thermalTip(String(modelData))
+                onClicked: root.setThermalProfile(String(modelData))
+              }
+            }
+          }
+        }
+
+        // ---------- Fans and temperatures ----------
+        PanelSeparator {
+          foreground: root.bar.foreground
+          visible: root.sensorsReady
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(8)
+          visible: root.sensorsReady
+
+          PanelSectionHeader {
+            text: "FANS & TEMPERATURES"
+            foreground: root.bar.foreground
+            fontFamily: root.bar.fontFamily
+          }
+
+          // Counted rather than listed: the status poll hands a new array every
+          // few seconds, and a listed model would rebuild (and re-animate) every row.
+          Repeater {
+            model: root.fans.length
+            FanRow {
+              required property int index
+              width: parent.width
+              fan: root.fans[index] || null
+              name: root.fanNames[index] || ""
+            }
+          }
+
+          Row {
+            id: tempRow
+            width: parent.width
+            spacing: Style.space(6)
+            visible: root.temps.length > 0
+
+            Repeater {
+              model: root.temps.length
+              TempTile {
+                required property int index
+                width: (tempRow.width - tempRow.spacing * Math.max(0, root.temps.length - 1)) / Math.max(1, root.temps.length)
+                reading: root.temps[index] || null
+              }
+            }
+          }
+
+          Column {
+            width: parent.width
+            spacing: Style.space(6)
+            visible: root.fanBoostAvailable && root.thermal !== null && root.thermal.profile === "custom"
+
+            BoostSlider { group: "cpu"; title: "CPU fans boost" }
+            BoostSlider { group: "gpu"; title: "GPU fans boost" }
+          }
+
+          Text {
+            visible: root.fanBoostAvailable && root.thermalModes.indexOf("custom") >= 0
+              && root.thermal !== null && root.thermal.profile !== "custom"
+            width: parent.width
+            wrapMode: Text.WordWrap
+            textFormat: Text.PlainText
+            text: "Pick Custom above to set the fan boost."
+            color: Qt.darker(root.bar.foreground, 1.4)
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+        }
+
         // ---------- Setup hint (helper not installed yet) ----------
         PanelSeparator {
           foreground: root.bar.foreground
@@ -1023,7 +1165,7 @@ Panel {
           visible: root.helperMissing
 
           PanelSectionHeader {
-            text: "DELL SETUP"
+            text: root.brand.toUpperCase() + " SETUP"
             foreground: root.bar.foreground
             fontFamily: root.bar.fontFamily
           }
@@ -1120,17 +1262,22 @@ Panel {
               title: "Components"
               value: root.powerChain ? root.plainWatt(root.powerChain.componentsW) : "—"
               collapsible: true
-              rows: [
-                {
-                  label: "CPU",
-                  value: root.powerChain && root.powerChain.cpuW !== null && root.powerChain.igpuW !== null
-                    ? root.plainWatt(root.powerChain.cpuW - root.powerChain.igpuW)
-                    : "—"
-                },
-                { label: "iGPU", value: root.powerChain ? root.plainWatt(root.powerChain.igpuW) : "—" },
-                { label: "RAM", value: root.powerChain ? root.plainWatt(root.powerChain.ramW) : "—" },
-                { label: "Other", value: root.powerChain ? root.plainWatt(root.powerChain.screenW) : "—" }
-              ]
+              // RAM only where the CPU reports it (RAPL dram); elsewhere it is part of "Other".
+              rows: {
+                var list = [
+                  {
+                    label: "CPU",
+                    value: root.powerChain && root.powerChain.cpuW !== null && root.powerChain.igpuW !== null
+                      ? root.plainWatt(root.powerChain.cpuW - root.powerChain.igpuW)
+                      : "—"
+                  },
+                  { label: "iGPU", value: root.powerChain ? root.plainWatt(root.powerChain.igpuW) : "—" }
+                ]
+                if (root.powerChain && root.powerChain.ramW !== null)
+                  list.push({ label: "RAM", value: root.plainWatt(root.powerChain.ramW) })
+                list.push({ label: "Other", value: root.powerChain ? root.plainWatt(root.powerChain.screenW) : "—" })
+                return list
+              }
             }
 
             FlowArrow {
@@ -1200,13 +1347,13 @@ Panel {
         // ---------- Dell USB options ----------
         PanelSeparator {
           foreground: root.bar.foreground
-          visible: root.dellWmiReady
+          visible: root.usbPowerShareReady || root.typeCPowerReady
         }
 
         Column {
           width: parent.width
           spacing: Style.space(10)
-          visible: root.dellWmiReady
+          visible: root.usbPowerShareReady || root.typeCPowerReady
 
           PanelSectionHeader {
             text: "USB PORTS"
@@ -1217,6 +1364,7 @@ Panel {
           Row {
             width: parent.width
             spacing: Style.space(6)
+            visible: root.usbPowerShareReady
 
             DellToggle {
               label: "USB PowerShare"
@@ -1231,6 +1379,7 @@ Panel {
           Row {
             width: parent.width
             spacing: Style.space(6)
+            visible: root.typeCPowerReady
 
             Button {
               width: (parent.width - parent.spacing) / 2
@@ -1260,6 +1409,132 @@ Panel {
           }
         }
       }
+    }
+  }
+
+  // One fan: its name, a bar of its speed against its maximum, and its rpm.
+  component FanRow: Item {
+    id: fanRow
+    property var fan: null
+    property string name: ""
+
+    implicitHeight: Math.max(fanName.implicitHeight, fanRpm.implicitHeight)
+
+    Text {
+      id: fanName
+      anchors.left: parent.left
+      anchors.verticalCenter: parent.verticalCenter
+      width: Style.space(84)
+      elide: Text.ElideRight
+      textFormat: Text.PlainText
+      text: fanRow.name
+      color: root.bar.foreground
+      opacity: 0.6
+      font.family: root.bar.fontFamily
+      font.pixelSize: Style.font.bodySmall
+    }
+
+    Rectangle {
+      anchors.left: fanName.right
+      anchors.leftMargin: Style.space(8)
+      anchors.right: fanRpm.left
+      anchors.rightMargin: Style.space(8)
+      anchors.verticalCenter: parent.verticalCenter
+      height: Style.space(4)
+      radius: height / 2
+      color: Qt.rgba(root.bar.foreground.r, root.bar.foreground.g, root.bar.foreground.b, 0.12)
+
+      Rectangle {
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        height: parent.height
+        radius: parent.radius
+        width: parent.width * Model.fanFraction(fanRow.fan)
+        color: root.bar.foreground
+
+        Behavior on width { NumberAnimation { duration: 400; easing.type: Easing.OutCubic } }
+      }
+    }
+
+    Text {
+      id: fanRpm
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      width: Style.space(66)
+      horizontalAlignment: Text.AlignRight
+      textFormat: Text.PlainText
+      text: fanRow.fan && fanRow.fan.rpm !== null ? fanRow.fan.rpm + " rpm" : "—"
+      color: root.bar.foreground
+      font.family: root.bar.fontFamily
+      font.pixelSize: Style.font.bodySmall
+    }
+  }
+
+  // One temperature: the reading, and what it is of.
+  component TempTile: Rectangle {
+    id: tempTile
+    property var reading: null
+
+    implicitHeight: tempBox.implicitHeight + Style.space(10)
+    radius: Math.max(2, Style.cornerRadius)
+    color: "transparent"
+    border.width: 1
+    border.color: Qt.rgba(root.bar.foreground.r, root.bar.foreground.g, root.bar.foreground.b, 0.3)
+
+    Column {
+      id: tempBox
+      anchors.centerIn: parent
+      spacing: Style.space(1)
+
+      Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        textFormat: Text.PlainText
+        text: tempTile.reading ? tempTile.reading.c + "°" : "—"
+        color: tempTile.reading && tempTile.reading.c >= 90 ? Color.urgent : root.bar.foreground
+        font.family: root.bar.fontFamily
+        font.pixelSize: Style.font.bodySmall
+        font.bold: true
+      }
+
+      Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        textFormat: Text.PlainText
+        text: tempTile.reading ? tempTile.reading.label : ""
+        color: root.bar.foreground
+        opacity: 0.6
+        font.family: root.bar.fontFamily
+        font.pixelSize: Style.font.caption
+      }
+    }
+  }
+
+  // The boost shared by a group of fans (cpu or gpu), in percent of the kernel's 0-255.
+  component BoostSlider: Column {
+    id: boostBox
+    property string group: ""
+    property string title: ""
+    readonly property var boost: Model.groupBoost(root.fans, group)
+
+    width: parent.width
+    spacing: Style.space(4)
+    visible: boost !== null
+
+    InfoPair {
+      label: boostBox.title
+      value: (boostSlider.dragging ? Math.round(boostSlider.liveValue) : Model.boostPercent(boostBox.boost)) + "%"
+    }
+
+    PanelSlider {
+      id: boostSlider
+      width: parent.width
+      bar: root.bar
+      minimum: 0
+      maximum: 100
+      step: 5
+      integer: true
+      value: Model.boostPercent(boostBox.boost)
+      enabled: !root.dellBusy
+      onReleased: function(v) { root.setFanBoost(boostBox.group, v) }
     }
   }
 

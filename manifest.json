@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "io.github.nipsen.dell-power",
   "name": "Dell Power",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "author": "NIPSEN",
-  "description": "Battery, Dell charge limit, power profile, and system stats",
+  "description": "Battery, Dell and Alienware charge limit, thermal modes, fans, power profile, and system stats",
   "kinds": [
     "bar-widget"
   ],
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "Dell Power",
-    "description": "Battery, Dell charge limit, power profile, and system stats",
+    "description": "Battery, Dell and Alienware charge limit, thermal modes, fans, power profile, and system stats",
     "category": "System",
     "allowMultiple": false,
     "defaults": {
