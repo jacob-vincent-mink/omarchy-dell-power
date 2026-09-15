@@ -145,6 +145,31 @@ outside its hardcoded allowlist). If the sudoers rule is missing, *writes*
 fall back to `pkexec`, which asks for the password via the Omarchy polkit
 agent; the power-flow readout stays hidden instead.
 
+## Updating
+
+The plugin is a git checkout, so updates are pulled straight from GitHub:
+
+```bash
+omarchy plugin update io.github.nipsen.dell-power
+```
+
+This fast-forwards the plugin code, re-validates the manifest and reloads
+the plugins in the running shell — no restart needed.
+
+**It does not update the privileged helper.** When a release changes
+`system/*` (the helper, the polkit action or the service), re-run the
+installer after updating:
+
+```bash
+cd ~/.config/omarchy/plugins/io.github.nipsen.dell-power
+./install-system.sh
+```
+
+Run from the just-updated checkout, it fetches and verifies the payloads at
+the new HEAD commit, so the installed helper always matches the plugin code.
+An older helper keeps working in the meantime — sections it cannot serve
+simply stay hidden until the helper is updated.
+
 ## Security notes
 
 - **No world-readable RAPL counters.** Earlier versions shipped a udev rule
