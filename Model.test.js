@@ -87,6 +87,42 @@ check("t2t taux nul -> vide", Model.timeToThresholdText(70, 0.6, 60, 0), "")
 check("t2t NaN -> vide", Model.timeToThresholdText(70, 0.6, NaN, 10), "")
 check("t2t <1m", Model.timeToThresholdText(70, 0.699, 29, 60), "<1m")
 
+// ---- Alienware: BIOS thresholds, thermal profiles, fans ----
+const aw = Model.parseDellStatus(
+  '{"ok":true,"dell":true,"vendor":"Alienware","backend":"sysman","source":"cache",' +
+  '"thresholds":{"start":55,"end":85},"wmi":{"mode":"Custom","usbPowerShare":"Disabled","typeCPower":null},' +
+  '"thermal":{"driver":"alienware-wmi","profile":"balanced","choices":["cool","quiet","balanced","balanced-performance","performance","custom","bad profile!"]},' +
+  '"sensors":{"fans":[{"id":"fan1","label":"CPU Fan","rpm":2219,"max":4900,"boost":0},{"id":"fan3","label":"GPU Fan","rpm":2239,"max":4900,"boost":40},' +
+  '{"id":"fan4","label":"GPU Fan","rpm":null,"max":0,"boost":300}],"temps":[{"label":"CPU","c":74},{"label":"GPU","c":30},{"label":"Hot","c":400}]}}'
+)
+check("aw brand", aw.brand, "Alienware")
+check("aw backend", aw.backend, "sysman")
+check("aw thresholds", [aw.hasThresholds, aw.start, aw.end], [true, 55, 85])
+check("aw no Type-C setting", aw.typeCPower, "")
+check("aw thermal choices, bad names dropped", aw.thermal.choices.length, 6)
+check("aw thermal ordered", Model.thermalChoices(aw.thermal), ["cool", "quiet", "balanced", "balanced-performance", "performance", "custom"])
+check("aw thermal extended", Model.thermalExtended(aw.thermal), true)
+check("ppd-only thermal not extended", Model.thermalExtended({ choices: ["low-power", "balanced", "performance"] }), false)
+check("aw fans grouped", aw.fans.map(f => f.group), ["cpu", "gpu", "gpu"])
+check("aw fan bad values -> null", [aw.fans[2].rpm, aw.fans[2].max, aw.fans[2].boost], [null, null, null])
+check("aw gpu boost", Model.groupBoost(aw.fans, "gpu"), 40)
+check("aw cpu fan fraction", Math.round(Model.fanFraction(aw.fans[0]) * 100), 45)
+check("aw temps, impossible values dropped", aw.temps, [{ label: "CPU", c: 74 }, { label: "GPU", c: 30 }])
+check("boostPercent 255 -> 100", Model.boostPercent(255), 100)
+check("boostPercent 40 -> 16", Model.boostPercent(40), 16)
+check("thermal label", Model.thermalLabel("balanced-performance"), "Balanced+")
+check("thermal icon is one glyph", Model.thermalIcon("custom").length, 2)
+check("thermal unknown label", Model.thermalLabel("turbo"), "turbo")
+check("parseThermal needs a profile", Model.parseThermal({ profile: "", choices: ["quiet"] }), null)
+check("fanGroup video", Model.fanGroup("Video Fan"), "gpu")
+check("fanNames number shared labels", Model.fanNames(aw.fans), ["CPU Fan", "GPU Fan 1", "GPU Fan 2"])
+check("brand Dell", Model.brandName("Dell Inc."), "Dell")
+
+const latitude = Model.parseDellStatus('{"ok":true,"dell":true,"thresholds":{"start":50,"end":90},"wmi":{"mode":"Custom"}}')
+check("older helper: no thermal", latitude.thermal, null)
+check("older helper: no fans", latitude.fans, [])
+check("older helper: brand Dell", latitude.brand, "Dell")
+
 // ---- non régression de la base ----
 check("parseKeyValue tab", Model.parseKeyValue("size\t57 Wh\ncycles\t0"), { size: "57 Wh", cycles: "0" })
 check("parseProfiles", Model.parseProfiles("balanced\t1\nperformance\t0", 0),

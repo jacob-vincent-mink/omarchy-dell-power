@@ -4,7 +4,9 @@ Battery status, power profiles, live power flow, and **Dell charge limit
 control** for the Omarchy bar. Derived from the built-in `omarchy.power`
 widget, extended with charge-limit, charge-mode and power-option controls for
 Dell laptops exposed through `dell-smm-hwmon` / `dell-wmi-sysman`
-(Latitude 7390 tested).
+(Latitude 7390 tested), and for **Alienware laptops**: charge limits through
+the BIOS settings, the firmware's thermal modes, fans, temperatures and fan
+boost (Alienware x16 R2 tested).
 
 ![Dell Power panel — battery hero with draggable charge thresholds, power flow chain, charge mode and USB options](preview.png)
 
@@ -19,7 +21,9 @@ Dell laptops exposed through `dell-smm-hwmon` / `dell-wmi-sysman`
   battery charge on this EC, plus the charge power). CPU and RAM come from
   the `package-0` and `dram` RAPL domains; iGPU is deduced as
   package − core − uncore; "Other" (screen, storage, PCH, fans…) is the
-  deduced remainder (components − CPU − RAM). The breakdown is hidden behind
+  deduced remainder (components − CPU − RAM; on CPUs without a `dram`
+  domain, such as Meteor Lake, memory is part of it and the RAM row is
+  hidden). The breakdown is hidden behind
   the small `+` button on the components tile. The battery always stays on
   the right. On battery, component draw is measured from the battery
   discharge. The battery current sign is corrected from the battery STATE
@@ -42,6 +46,22 @@ Dell laptops exposed through `dell-smm-hwmon` / `dell-wmi-sysman`
   writes — so it is not exposed as a control)
 - **USB PowerShare** toggle
 - **Type-C connector power** — 7.5 W / 15 W
+- **Alienware laptops** — the `dell_laptop` battery hook only binds to
+  machines whose vendor is Dell Inc., so on Alienware the thresholds are the
+  BIOS settings `CustomChargeStart` / `CustomChargeStop` through
+  `dell-wmi-sysman` (same 50–95 / 55–100 ranges). On top of the charge limit
+  and charge mode:
+  - **Thermal mode** — every mode the firmware offers through `alienware-wmi`:
+    Cool, Quiet, Balanced, Balanced+, Performance (G-Mode on laptops that have
+    it) and Custom. power-profiles-daemon only reaches three of them, so the
+    section shows up only where the firmware offers more; a profile the daemon
+    applies later replaces the firmware mode.
+  - **Fans & temperatures** — each fan's speed against its maximum, and the
+    CPU, GPU, charger and ambient temperatures the EC reports (reading them
+    never wakes a sleeping GPU).
+  - **Fan boost** — CPU and GPU fan boost sliders in Custom mode
+    (`fan[1-4]_boost`, 0–255).
+- Controls a laptop does not have (Type-C power on the Alienware) stay hidden.
 
 ## Requirements
 
@@ -49,7 +69,10 @@ Dell laptops exposed through `dell-smm-hwmon` / `dell-wmi-sysman`
 - A Dell laptop exposing
   `/sys/class/power_supply/BAT0/charge_control_{start,end}_threshold`
   (`dell-smm-hwmon` / `dell_laptop`) and the
-  `/sys/class/firmware-attributes/dell-wmi-sysman` interface
+  `/sys/class/firmware-attributes/dell-wmi-sysman` interface, or an Alienware
+  laptop exposing `CustomChargeStart` / `CustomChargeStop` through
+  `dell-wmi-sysman` (thermal modes and fan boost need the kernel's
+  `alienware-wmi` driver with its platform profile and hwmon support)
 - `jq` for the privileged helper
 - An Intel CPU for the power-flow chain (RAPL `powercap` counters) — the rest
   of the widget works without it
@@ -133,8 +156,11 @@ agent; the power-flow readout stays hidden instead.
 - The sudoers rule grants the installing user passwordless root on the helper
   path only. The helper validates every argument against hardcoded allowlists
   (charge thresholds 50–95/55–100, six WMI attributes with fixed value sets,
-  plus the read-only `status` and `power-chain` commands), so the reachable
-  surface is exactly what the panel exposes.
+  the thermal profiles the kernel defines and the firmware lists, fan boost
+  0–255 for the Alienware CPU and GPU fan groups, plus the read-only `status`
+  and `power-chain` commands), so the reachable surface is exactly what the
+  panel exposes. Attribute names are checked against a strict pattern before
+  they are used as array keys.
 - Privileged-code provenance: root executes only publisher bytes. The
   installer core is fetched over HTTPS at the checkout's HEAD commit,
   digest-verified against the publisher manifest *before* elevation, and
@@ -179,6 +205,16 @@ Inline settings in the widget's `shell.json` bar entry:
 | `AdvBatteryChargeCfg` | yes | Time windows are BIOS-only on this model; not exposed yet |
 | `LongLifeCyclePriBattery` | — | Write refused by the firmware on the Latitude 7390 |
 | `PeakShiftBatteryThreshold` | — | Write accepted but not applied by the firmware on the Latitude 7390 |
+
+### Alienware x16 R2
+
+| Setting | Applies immediately | Notes |
+|---|---|---|
+| `CustomChargeStart` / `CustomChargeStop` | yes | BIOS settings through `dell-wmi-sysman`; root-only reads, cached for the widget; raising the start moves the stop up with it |
+| `PrimaryBattChargeCfg` | yes | Same modes as the Latitude |
+| Thermal modes | yes | `cool quiet balanced balanced-performance performance custom`; `custom` is only accepted on the class device (`/sys/class/platform-profile/*/profile`), the legacy global file refuses it |
+| Fan boost | yes | At boost 60 the GPU fans went from about 3000 to 4000 rpm within seconds |
+| `TypeCPower`, `LongLifeCyclePriBattery`, `PeakShiftCfg` | — | Not present on this model, so hidden |
 
 ## Remove
 
