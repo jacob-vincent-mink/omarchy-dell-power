@@ -24,7 +24,7 @@ boost (Alienware x16 R2 tested).
   dedicated NPU energy from the Panther Lake PMT counter and shows its watts
   in the NPU row. On other chips, or when PMT is unavailable, the row shows
   `—`. Package RAPL already includes NPU energy, so measured NPU watts are
-  subtracted from the package-based CPU estimate to avoid counting them twice.
+  subtracted from the derived iGPU remainder to avoid counting them twice.
   "Other" (screen, storage, PCH,
   fans…) is the deduced remainder
   after subtracting the entire package and RAM (on CPUs without a `dram`

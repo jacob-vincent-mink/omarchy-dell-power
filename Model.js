@@ -333,12 +333,17 @@ function parsePowerChain(raw) {
   }
 }
 
-// Package RAPL already contains NPU energy. Allocate measured NPU watts out
-// of the package-based CPU estimate so the breakout does not double count it.
+// Package RAPL already contains NPU energy. The iGPU estimate is the package
+// remainder after core and uncore, so allocate measured NPU watts out of it.
 function cpuComponentW(chain) {
   if (!chain || chain.cpuW === null || chain.igpuW === null) return null
+  return Math.max(0, chain.cpuW - chain.igpuW)
+}
+
+function igpuComponentW(chain) {
+  if (!chain || chain.igpuW === null) return null
   var npuW = chain.npuW !== null && chain.npuW !== undefined ? chain.npuW : 0
-  return Math.max(0, chain.cpuW - chain.igpuW - npuW)
+  return Math.max(0, chain.igpuW - npuW)
 }
 
 function parseDellStatus(raw) {
@@ -421,6 +426,7 @@ if (typeof module !== "undefined") {
     boostPercent: boostPercent,
     parseDellStatus: parseDellStatus,
     parsePowerChain: parsePowerChain,
-    cpuComponentW: cpuComponentW
+    cpuComponentW: cpuComponentW,
+    igpuComponentW: igpuComponentW
   }
 }

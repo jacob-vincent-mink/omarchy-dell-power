@@ -79,8 +79,11 @@ check("chain packV", chainVA.packV, 8.78)
 check("chain packA", chainVA.packA, 1.84)
 const chainNpu = Model.parsePowerChain('{"source":"mains","cpuW":10,"igpuW":2,"npuPresent":true,"npuW":2.5}')
 check("NPU power parsed", [chainNpu.npuPresent, chainNpu.npuW], [true, 2.5])
-check("NPU allocated from package", Model.cpuComponentW(chainNpu), 5.5)
-check("NPU meter absent keeps CPU estimate", Model.cpuComponentW({ cpuW: 10, igpuW: 2, npuW: null }), 8)
+check("NPU leaves CPU estimate", Model.cpuComponentW(chainNpu), 8)
+check("NPU allocated from iGPU remainder", Model.igpuComponentW(chainNpu), 0)
+check("NPU meter absent keeps iGPU estimate", Model.igpuComponentW({ igpuW: 2, npuW: null }), 2)
+check("NPU workload keeps watt balance", [Model.cpuComponentW({ cpuW: 13.2, igpuW: 11.4, npuW: 3.5 }),
+  Model.igpuComponentW({ cpuW: 13.2, igpuW: 11.4, npuW: 3.5 })].map(v => Number(v.toFixed(1))), [1.8, 7.9])
 check("NPU absent by default", [chain.npuPresent, chain.npuW], [false, null])
 
 // ---- timeToThresholdText ----
