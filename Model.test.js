@@ -77,6 +77,10 @@ check("chain pack absent -> null", chainNulls.packV, null)
 const chainVA = Model.parsePowerChain('{"source":"mains","packV":8.78,"packA":1.84}')
 check("chain packV", chainVA.packV, 8.78)
 check("chain packA", chainVA.packA, 1.84)
+check("NPU missing", Model.parseNpuUsage(""), null)
+check("NPU absent", Model.parseNpuUsage('{"present":false,"util":null}'), { present: false, util: null })
+check("NPU active", Model.parseNpuUsage('{"present":true,"util":37}'), { present: true, util: 37 })
+check("NPU bad utilization", Model.parseNpuUsage('{"present":true,"util":120}'), { present: true, util: null })
 
 // ---- timeToThresholdText ----
 check("t2t 70% @67% 29Wh 15.9W -> 3m", Model.timeToThresholdText(70, 0.67, 29, 15.9), "3m")

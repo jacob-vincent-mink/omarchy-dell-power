@@ -30,6 +30,7 @@ Panel {
   property bool dellTriedPkexec: false
   property bool dellActionHandled: false
   property var powerChain: null
+  property var npuUsage: null
   // Every spawned process runs with absolute executables and a closed,
   // minimal environment: a shadowed binary earlier in the shell PATH must
   // never get code execution (or impersonate the privilege UI) on routine
@@ -365,11 +366,17 @@ Panel {
 
   function refreshPowerChain() {
     if (!powerChainProc.running) powerChainProc.running = true
+    if (!npuUsageProc.running) npuUsageProc.running = true
   }
 
   function updatePowerChain(raw) {
     var parsed = Model.parsePowerChain(raw)
     if (parsed) powerChain = parsed
+  }
+
+  function updateNpuUsage(raw) {
+    var parsed = Model.parseNpuUsage(raw)
+    if (parsed) npuUsage = parsed
   }
 
   function sourceIcon() {
@@ -536,6 +543,15 @@ Panel {
     // section simply stays hidden.
     command: ["/usr/bin/timeout", "-k", "5", "20", "/usr/bin/sudo", "-n", root.helperPath, "power-chain"]
     stdout: CappedCollector { proc: powerChainProc; onFinished: t => root.updatePowerChain(t) }
+  }
+
+  Process {
+    id: npuUsageProc
+    clearEnvironment: true
+    environment: root.procEnv
+    command: ["/usr/bin/timeout", "-k", "5", "10", "/usr/bin/bash",
+      String(Qt.resolvedUrl("npu-usage")).replace(/^file:\/\//, "")]
+    stdout: CappedCollector { proc: npuUsageProc; onFinished: t => root.updateNpuUsage(t) }
   }
 
   // Silent self-heal: if the WMI cache is stale (null values written
@@ -1275,6 +1291,9 @@ Panel {
                 ]
                 if (root.powerChain && root.powerChain.ramW !== null)
                   list.push({ label: "RAM", value: root.plainWatt(root.powerChain.ramW) })
+                if (root.npuUsage && root.npuUsage.present)
+                  list.push({ label: "NPU", value: root.npuUsage.util !== null
+                    ? root.npuUsage.util + "%" : "—" })
                 list.push({ label: "Other", value: root.powerChain ? root.plainWatt(root.powerChain.screenW) : "—" })
                 return list
               }

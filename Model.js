@@ -331,6 +331,18 @@ function parsePowerChain(raw) {
   }
 }
 
+function parseNpuUsage(raw) {
+  try {
+    var obj = JSON.parse(String(raw || "").trim())
+    if (!obj || typeof obj.present !== "boolean") return null
+    var util = typeof obj.util === "number" && isFinite(obj.util) && obj.util >= 0 && obj.util <= 100
+      ? obj.util : null
+    return { present: obj.present, util: obj.present ? util : null }
+  } catch (e) {
+    return null
+  }
+}
+
 function parseDellStatus(raw) {
   var text = String(raw || "").trim()
   if (!text) return null
@@ -410,6 +422,7 @@ if (typeof module !== "undefined") {
     fanFraction: fanFraction,
     boostPercent: boostPercent,
     parseDellStatus: parseDellStatus,
-    parsePowerChain: parsePowerChain
+    parsePowerChain: parsePowerChain,
+    parseNpuUsage: parseNpuUsage
   }
 }
