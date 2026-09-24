@@ -20,11 +20,12 @@ boost (Alienware x16 R2 tested).
   total it provides (RAPL `psys`, which measures the platform *excluding*
   battery charge on this EC, plus the charge power). CPU and RAM come from
   the `package-0` and `dram` RAPL domains; iGPU is deduced as
-  package − core − uncore. On systems with an Intel NPU, the NPU row reads
-  energy-derived watts from the optional `omarchy-npu-waveform` power reader.
-  A stale or unavailable reading shows `—`. Package RAPL already includes
-  NPU energy, so measured NPU watts are subtracted from the package-based CPU
-  estimate to avoid counting them twice. "Other" (screen, storage, PCH,
+  package − core − uncore. On systems with an Intel NPU, the helper reads
+  dedicated NPU energy from the Panther Lake PMT counter and shows its watts
+  in the NPU row. On other chips, or when PMT is unavailable, the row shows
+  `—`. Package RAPL already includes NPU energy, so measured NPU watts are
+  subtracted from the package-based CPU estimate to avoid counting them twice.
+  "Other" (screen, storage, PCH,
   fans…) is the deduced remainder
   after subtracting the entire package and RAM (on CPUs without a `dram`
   domain, such as Meteor Lake, memory is part of it and the RAM row is
