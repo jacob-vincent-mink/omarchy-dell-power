@@ -15,17 +15,17 @@ boost (Alienware x16 R2 tested).
 - Battery percentage, state, size and cycle count
 - AC/battery power profiles (power-profiles-daemon)
 - **Power flow chain** — live energy flow with a fixed layout:
-  `[Source: adapter W] ⇄ [Components: CPU / iGPU / RAM / NPU activity / Other] ⇄ [Battery: ±W]`.
+  `[Source: adapter W] ⇄ [Components: CPU / iGPU / RAM / NPU / Other] ⇄ [Battery: ±W]`.
   Animated pixel dots show the flow direction. The adapter tile shows the
   total it provides (RAPL `psys`, which measures the platform *excluding*
   battery charge on this EC, plus the charge power). CPU and RAM come from
   the `package-0` and `dram` RAPL domains; iGPU is deduced as
-  package − core − uncore. On systems with an Intel NPU, its row shows
-  utilization from the kernel's `npu_busy_time_us` counter, sampled by the
-  unprivileged `npu-usage` script. The row is an activity percentage, not
-  another watt amount to add to the breakdown. Package RAPL includes the
-  NPU, so its power is already counted within the package-based CPU/iGPU
-  estimates. "Other" (screen, storage, PCH, fans…) is the deduced remainder
+  package − core − uncore. On systems with an Intel NPU, the NPU row reads
+  energy-derived watts from the optional `omarchy-npu-waveform` power reader.
+  A stale or unavailable reading shows `—`. Package RAPL already includes
+  NPU energy, so measured NPU watts are subtracted from the package-based CPU
+  estimate to avoid counting them twice. "Other" (screen, storage, PCH,
+  fans…) is the deduced remainder
   after subtracting the entire package and RAM (on CPUs without a `dram`
   domain, such as Meteor Lake, memory is part of it and the RAM row is
   hidden). The breakdown is hidden behind

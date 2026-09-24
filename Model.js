@@ -331,16 +331,24 @@ function parsePowerChain(raw) {
   }
 }
 
-function parseNpuUsage(raw) {
+function parseNpuPower(raw) {
   try {
     var obj = JSON.parse(String(raw || "").trim())
     if (!obj || typeof obj.present !== "boolean") return null
-    var util = typeof obj.util === "number" && isFinite(obj.util) && obj.util >= 0 && obj.util <= 100
-      ? obj.util : null
-    return { present: obj.present, util: obj.present ? util : null }
+    var watts = typeof obj.watts === "number" && isFinite(obj.watts) && obj.watts >= 0
+      ? obj.watts : null
+    return { present: obj.present, watts: obj.present ? watts : null }
   } catch (e) {
     return null
   }
+}
+
+// Package RAPL already contains NPU energy. Allocate measured NPU watts out
+// of the package-based CPU estimate so the breakout does not double count it.
+function cpuComponentW(chain, npuPower) {
+  if (!chain || chain.cpuW === null || chain.igpuW === null) return null
+  var npuW = npuPower && npuPower.watts !== null ? npuPower.watts : 0
+  return Math.max(0, chain.cpuW - chain.igpuW - npuW)
 }
 
 function parseDellStatus(raw) {
@@ -423,6 +431,7 @@ if (typeof module !== "undefined") {
     boostPercent: boostPercent,
     parseDellStatus: parseDellStatus,
     parsePowerChain: parsePowerChain,
-    parseNpuUsage: parseNpuUsage
+    parseNpuPower: parseNpuPower,
+    cpuComponentW: cpuComponentW
   }
 }

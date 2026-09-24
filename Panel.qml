@@ -30,7 +30,7 @@ Panel {
   property bool dellTriedPkexec: false
   property bool dellActionHandled: false
   property var powerChain: null
-  property var npuUsage: null
+  property var npuPower: null
   // Every spawned process runs with absolute executables and a closed,
   // minimal environment: a shadowed binary earlier in the shell PATH must
   // never get code execution (or impersonate the privilege UI) on routine
@@ -366,7 +366,7 @@ Panel {
 
   function refreshPowerChain() {
     if (!powerChainProc.running) powerChainProc.running = true
-    if (!npuUsageProc.running) npuUsageProc.running = true
+    if (!npuPowerProc.running) npuPowerProc.running = true
   }
 
   function updatePowerChain(raw) {
@@ -374,9 +374,9 @@ Panel {
     if (parsed) powerChain = parsed
   }
 
-  function updateNpuUsage(raw) {
-    var parsed = Model.parseNpuUsage(raw)
-    if (parsed) npuUsage = parsed
+  function updateNpuPower(raw) {
+    var parsed = Model.parseNpuPower(raw)
+    if (parsed) npuPower = parsed
   }
 
   function sourceIcon() {
@@ -546,12 +546,12 @@ Panel {
   }
 
   Process {
-    id: npuUsageProc
+    id: npuPowerProc
     clearEnvironment: true
     environment: root.procEnv
     command: ["/usr/bin/timeout", "-k", "5", "10", "/usr/bin/bash",
-      String(Qt.resolvedUrl("npu-usage")).replace(/^file:\/\//, "")]
-    stdout: CappedCollector { proc: npuUsageProc; onFinished: t => root.updateNpuUsage(t) }
+      String(Qt.resolvedUrl("npu-power")).replace(/^file:\/\//, "")]
+    stdout: CappedCollector { proc: npuPowerProc; onFinished: t => root.updateNpuPower(t) }
   }
 
   // Silent self-heal: if the WMI cache is stale (null values written
@@ -1283,17 +1283,14 @@ Panel {
                 var list = [
                   {
                     label: "CPU",
-                    value: root.powerChain && root.powerChain.cpuW !== null && root.powerChain.igpuW !== null
-                      ? root.plainWatt(root.powerChain.cpuW - root.powerChain.igpuW)
-                      : "—"
+                    value: root.powerChain ? root.plainWatt(Model.cpuComponentW(root.powerChain, root.npuPower)) : "—"
                   },
                   { label: "iGPU", value: root.powerChain ? root.plainWatt(root.powerChain.igpuW) : "—" }
                 ]
                 if (root.powerChain && root.powerChain.ramW !== null)
                   list.push({ label: "RAM", value: root.plainWatt(root.powerChain.ramW) })
-                if (root.npuUsage && root.npuUsage.present)
-                  list.push({ label: "NPU", value: root.npuUsage.util !== null
-                    ? root.npuUsage.util + "%" : "—" })
+                if (root.npuPower && root.npuPower.present)
+                  list.push({ label: "NPU", value: root.plainWatt(root.npuPower.watts) })
                 list.push({ label: "Other", value: root.powerChain ? root.plainWatt(root.powerChain.screenW) : "—" })
                 return list
               }
